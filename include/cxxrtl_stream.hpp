@@ -29,7 +29,7 @@ struct bit {
 	size_t offset;
 };
 
-typedef std::function<void(uint64_t ts, std::map<std::string, struct bit> bits)> sample_t;
+typedef std::function<void(double ts, std::map<std::string, struct bit> bits)> sample_t;
 
 // this extremely cursed construction is so that we can set the function to something else via ldsym
 extern "C" {
@@ -46,10 +46,22 @@ namespace cxxrtl {
 class stream_writer {
 
 	std::map<std::string, struct bit> bits;
+	double scale;
 
 public:
 
 	void timescale(unsigned number, const std::string &unit) {
+		if(unit == "ms") {
+			scale = number*1e-3;
+		} else if (unit == "us") {
+			scale = number*1e-6;
+		} else if (unit == "ns") {
+			scale = number*1e-9;
+		} else if (unit == "ps") {
+			scale = number*1e-12;
+		} else {
+			scale = number; // give up
+		}
 	}
 
 	void add(const std::string &hier_name, const debug_item &item, bool multipart = false) {
@@ -90,7 +102,7 @@ public:
 
 	void sample(uint64_t timestamp) {
 		if (cxxrtl_stream_sample) {
-			cxxrtl_stream_sample(timestamp, bits);
+			cxxrtl_stream_sample(timestamp*scale, bits);
 		}
 	}
 };

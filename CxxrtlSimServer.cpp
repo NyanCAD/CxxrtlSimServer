@@ -33,7 +33,7 @@ struct bit {
 
 typedef int ( *rtlmain )(int argc, const char* argv[]);
 
-typedef std::function<void(uint64_t ts, std::map<std::string, struct bit> bits)> sample_t;
+typedef std::function<void(double ts, std::map<std::string, struct bit> bits)> sample_t;
 
 
 class RunImpl final : public Sim::Run::Server
@@ -50,9 +50,10 @@ public:
         auto mainfn = (rtlmain) dlsym(m_dll, "main" );
         KJ_ASSERT_NONNULL(mainfn);
         auto sample = (sample_t*) dlsym(m_dll, "cxxrtl_stream_sample" );
-        *sample = [this](uint64_t ts, std::map<std::string, struct bit> bits) {
+        *sample = [this](double ts, std::map<std::string, struct bit> bits) {
             auto data = this->data.lockExclusive();
-            (*data)["time"].push_back(ts);
+            auto time = this->time.lockExclusive();
+            time->push_back(ts);
             for (auto &it : bits) {
                 bool bit = (*it.second.ptr >> it.second.offset) & 1;
                 (*data)[it.first].push_back(bit);
@@ -78,18 +79,30 @@ public:
     kj::Own<kj::Thread> thread;
 
     kj::MutexGuarded<std::map<std::string, std::vector<bool>>>data;
+    kj::MutexGuarded<std::vector<double>>time;
     kj::MutexGuarded<bool> is_running;
 };
 
 kj::Promise<void> ResultImpl::read(ReadContext context)
 {
     auto data = cmd->data.lockExclusive();
+    auto time = cmd->time.lockExclusive();
 
     auto res = context.getResults();
     res.setScale("time");
     res.setMore(*cmd->is_running.lockExclusive());
-    auto datlist = res.initData(data->size());
+    auto datlist = res.initData(data->size()+1);
     int i = 0;
+    datlist[i].setName("time");
+    auto dat = datlist[i].getData();
+    i++;
+    auto list = dat.initReal(time->size());
+    for (size_t j = 0; j < time->size(); j++)
+    {
+        list.set(j, (*time)[j]);
+    }
+    time->clear();
+
     for (auto &it : *data)
     {
         datlist[i].setName(it.first);
