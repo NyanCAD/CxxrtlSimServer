@@ -8,6 +8,7 @@
 #include <iostream>
 #include <vector>
 #include <map>
+#include <set>
 #include <complex>
 #include <sstream>
 #include <functional>
@@ -43,6 +44,10 @@ public:
 
     kj::Promise<void> run(RunContext context)
     {
+        std::set<std::string> vectors;
+        for (auto v : context.getParams().getVectors()) {
+           vectors.insert(v.cStr());
+        }
         void* m_dll = dlopen(("./"+libpath).c_str(), RTLD_LAZY);
         if(m_dll == nullptr) {
             throw KJ_EXCEPTION(FAILED, dlerror());
@@ -50,14 +55,16 @@ public:
         auto mainfn = (rtlmain) dlsym(m_dll, "main" );
         KJ_ASSERT_NONNULL(mainfn);
         auto sample = (sample_t*) dlsym(m_dll, "cxxrtl_stream_sample" );
-        *sample = [this](double ts, std::map<std::string, struct bit> bits) {
+        *sample = [this, vectors](double ts, std::map<std::string, struct bit> bits) {
             auto data = this->data.lockExclusive();
             auto time = this->time.lockExclusive();
             time->push_back(ts);
             for (auto &it : bits) {
-                bool bit = (*it.second.ptr >> it.second.offset) & 1;
-                (*data)[it.first].push_back(bit);
-                // std::cout << "server " << it.first << ": " << bit << std::endl;
+                if(vectors.count(it.first)) {
+                    bool bit = (*it.second.ptr >> it.second.offset) & 1;
+                    (*data)[it.first].push_back(bit);
+                    // std::cout << "server " << it.first << ": " << bit << std::endl;
+                }
             }
         };
 
